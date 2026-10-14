@@ -40,6 +40,12 @@ def cmd_scan(args: argparse.Namespace) -> None:
     table.add_row("Kaydedilen İçerikler (Saved)", str(summary.records_inserted.get("saved_posts", 0)))
     table.add_row("Takipçiler (Followers)", str(summary.records_inserted.get("followers", 0)))
     table.add_row("Takip Edilenler (Following)", str(summary.records_inserted.get("following", 0)))
+    table.add_row("Reklam Verenler (Advertisers)", str(summary.records_inserted.get("advertisers", 0)))
+    table.add_row("Meta Dışı Etkinlikler (Off-Meta)", str(summary.records_inserted.get("off_meta_activity", 0)))
+    table.add_row("Son Aramalar (Searches)", str(summary.records_inserted.get("recent_searches", 0)))
+    table.add_row("Beğenilen Gönderiler (Liked Posts)", str(summary.records_inserted.get("liked_posts", 0)))
+    table.add_row("Hikaye Beğenileri (Story Likes)", str(summary.records_inserted.get("story_likes", 0)))
+    table.add_row("Silinen İçerikler (Deleted Content)", str(summary.records_inserted.get("deleted_content", 0)))
 
     console.print(table)
 
@@ -138,6 +144,53 @@ def cmd_social(args: argparse.Namespace) -> None:
         console.print(f"[dim]... ve {len(not_following_back) - args.limit} hesap daha (hepsini görmek için --limit parametresi verin)[/dim]")
 
 
+def cmd_tui(args: argparse.Namespace) -> None:
+    from instavault.tui import run_tui
+
+    run_tui(db_path=args.db, watch=getattr(args, "watch", False))
+
+
+def cmd_report(args: argparse.Namespace) -> None:
+    from instavault.report import generate_report
+
+    output_path = Path(args.output).expanduser().resolve()
+    db_path = Path(args.db).expanduser().resolve() if args.db else None
+
+    console.print("[bold cyan]📊 InstaVault HTML Raporu Üretiliyor...[/bold cyan]")
+    out = generate_report(db_path=db_path, output_path=output_path)
+    console.print(f"[bold green]✔ Rapor başarıyla oluşturuldu:[/bold green] [yellow]{out}[/yellow]")
+    console.print("[dim]Tarayıcınızda açıp Liquid Glass görselleştirmelerini inceleyebilirsiniz.[/dim]")
+
+
+def cmd_serve(args: argparse.Namespace) -> None:
+    from instavault.web import run_server
+
+    db_path = Path(args.db).expanduser().resolve() if args.db else None
+    run_server(db_path=db_path, host=args.bind, port=args.port)
+
+
+def cmd_systemd(args: argparse.Namespace) -> None:
+    from instavault.systemd import install_systemd_units, uninstall_systemd_units
+
+    if args.install:
+        units = install_systemd_units(
+            scan_input=args.input,
+            on_calendar=args.calendar,
+        )
+        console.print("[bold green]✔ InstaVault systemd servis ve timer dosyaları başarıyla kuruldu:[/bold green]")
+        for kind, path in units.items():
+            console.print(f"  • {kind}: [cyan]{path}[/cyan]")
+        console.print("\n[dim]Timer'ı etkinleştirmek için: systemctl --user enable --now instavault.timer[/dim]")
+    elif args.uninstall:
+        res = uninstall_systemd_units()
+        if res:
+            console.print("[bold yellow]✔ InstaVault systemd servis ve timer dosyaları kaldırıldı.[/bold yellow]")
+        else:
+            console.print("[dim]Kaldırılacak systemd dosyası bulunamadı.[/dim]")
+    else:
+        console.print("[yellow]Bilgi:[/yellow] Kullanım: [bold]instavault systemd --install[/bold] veya [bold]--uninstall[/bold]")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="instavault",
@@ -161,6 +214,33 @@ def main() -> None:
     p_social.add_argument("--db", "-d", default=None, help="SQLite veritabanı dosya yolu")
     p_social.add_argument("--limit", "-l", type=int, default=25, help="Listelenecek azami hesap sayısı")
     p_social.set_defaults(func=cmd_social)
+
+    # tui
+    p_tui = subparsers.add_parser("tui", help="Terminal kullanıcı arayüzü ve modern analitik paneli")
+    p_tui.add_argument("--db", "-d", default=None, help="SQLite veritabanı dosya yolu")
+    p_tui.add_argument("--watch", "-w", action="store_true", help="Canlı yenileme modu (Live refresh)")
+    p_tui.set_defaults(func=cmd_tui)
+
+    # report
+    p_report = subparsers.add_parser("report", help="Liquid Glass analitik HTML raporu üret")
+    p_report.add_argument("-o", "--output", default="report.html", help="Çıktı HTML dosyası (varsayılan: report.html)")
+    p_report.add_argument("--db", "-d", default=None, help="SQLite veritabanı dosya yolu")
+    p_report.set_defaults(func=cmd_report)
+
+    # serve
+    p_serve = subparsers.add_parser("serve", help="Yerel web sunucusunu ve Liquid Glass arayüzünü başlat")
+    p_serve.add_argument("--bind", default="127.0.0.1", help="Dinlenecek IP adresi (Sadece 127.0.0.1)")
+    p_serve.add_argument("--port", "-p", type=int, default=4173, help="Dinlenecek port (varsayılan: 4173)")
+    p_serve.add_argument("--db", "-d", default=None, help="SQLite veritabanı dosya yolu")
+    p_serve.set_defaults(func=cmd_serve)
+
+    # systemd
+    p_systemd = subparsers.add_parser("systemd", help="systemd user servisi ve timer kurulumu/yönetimi")
+    p_systemd.add_argument("--install", action="store_true", help="~/.config/systemd/user/ altına servis ve timer kur")
+    p_systemd.add_argument("--uninstall", action="store_true", help="systemd servis ve timer dosyalarını kaldır")
+    p_systemd.add_argument("--input", "-i", default=None, help="Özel Instagram ham veri klasörü")
+    p_systemd.add_argument("--calendar", default="daily", help="Timer periyodu (varsayılan: daily)")
+    p_systemd.set_defaults(func=cmd_systemd)
 
     args = parser.parse_args()
     if not hasattr(args, "func"):

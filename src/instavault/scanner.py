@@ -10,6 +10,11 @@ from instavault.parser import (
     parse_export_header,
     parse_media_cards,
     parse_social_connections,
+    parse_advertisers,
+    parse_off_meta,
+    parse_recent_searches,
+    parse_interactions,
+    parse_deleted_content,
 )
 
 
@@ -24,11 +29,19 @@ class ScanSummary:
         "saved_posts": 0,
         "followers": 0,
         "following": 0,
+        "pending_requests": 0,
+        "advertisers": 0,
+        "off_meta_activity": 0,
+        "recent_searches": 0,
+        "liked_posts": 0,
+        "story_likes": 0,
+        "deleted_content": 0,
     })
 
 
 def detect_file_type(path: Path) -> Optional[str]:
     name = path.name.lower()
+    parent_name = path.parent.name.lower()
 
     if name == "videos_watched.html" or ("video" in name and name.endswith(".html")):
         return "videos_watched"
@@ -42,6 +55,18 @@ def detect_file_type(path: Path) -> Optional[str]:
         return "following"
     if "pending_follow" in name and name.endswith(".html"):
         return "pending_requests"
+    if "advertisers_using_your_activity" in name or name == "advertisers.html" or ("advertiser" in name and name.endswith(".html")):
+        return "advertisers"
+    if name == "your_activity_off_meta_technologies.html" or parent_name == "your_activity_off_meta_technologies" or "off_meta" in name:
+        return "off_meta_activity"
+    if name == "recent_searches.html" or "recent_searches" in name or ("searches" in name and name.endswith(".html")):
+        return "recent_searches"
+    if name == "liked_posts.html" or ("liked" in name and "post" in name and name.endswith(".html")):
+        return "liked_posts"
+    if name == "story_likes.html" or ("story" in name and "like" in name and name.endswith(".html")):
+        return "story_likes"
+    if name == "recently_deleted_content.html" or ("deleted" in name and name.endswith(".html")):
+        return "deleted_content"
     return None
 
 
@@ -162,6 +187,77 @@ def ingest_file(conn: sqlite3.Connection, file_path: Path, root_dir: Path) -> in
                     r["connected_at"],
                     export_id,
                 ),
+            )
+            if cur.rowcount > 0:
+                inserted_count += 1
+
+    elif file_type == "advertisers":
+        records = parse_advertisers(soup)
+        for r in records:
+            cur.execute(
+                """
+                INSERT OR IGNORE INTO advertisers
+                (advertiser_name, has_data_sharing, export_id)
+                VALUES (?, ?, ?)
+                """,
+                (r["advertiser_name"], int(r.get("has_data_sharing", False)), export_id),
+            )
+            if cur.rowcount > 0:
+                inserted_count += 1
+
+    elif file_type == "off_meta_activity":
+        records = parse_off_meta(soup)
+        for r in records:
+            cur.execute(
+                """
+                INSERT OR IGNORE INTO off_meta_activity
+                (event_name, company_name, timestamp, export_id)
+                VALUES (?, ?, ?, ?)
+                """,
+                (r["event_name"], r["company_name"], r["timestamp"], export_id),
+            )
+            if cur.rowcount > 0:
+                inserted_count += 1
+
+    elif file_type == "recent_searches":
+        records = parse_recent_searches(soup)
+        for r in records:
+            cur.execute(
+                """
+                INSERT OR IGNORE INTO searches
+                (search_query, searched_at, export_id)
+                VALUES (?, ?, ?)
+                """,
+                (r["search_query"], r["searched_at"], export_id),
+            )
+            if cur.rowcount > 0:
+                inserted_count += 1
+
+    elif file_type in ("liked_posts", "story_likes"):
+        interaction_type = "post_like" if file_type == "liked_posts" else "story_like"
+        records = parse_interactions(soup, default_type=interaction_type)
+        for r in records:
+            cur.execute(
+                """
+                INSERT OR IGNORE INTO interactions
+                (interaction_type, target_url, target_username, timestamp, export_id)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (r["interaction_type"], r.get("target_url"), r.get("target_username"), r["timestamp"], export_id),
+            )
+            if cur.rowcount > 0:
+                inserted_count += 1
+
+    elif file_type == "deleted_content":
+        records = parse_deleted_content(soup)
+        for r in records:
+            cur.execute(
+                """
+                INSERT OR IGNORE INTO deleted_content
+                (content_type, caption, deleted_at, export_id)
+                VALUES (?, ?, ?, ?)
+                """,
+                (r["content_type"], r.get("caption"), r["deleted_at"], export_id),
             )
             if cur.rowcount > 0:
                 inserted_count += 1

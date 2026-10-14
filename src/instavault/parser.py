@@ -168,3 +168,223 @@ def parse_social_connections(soup: BeautifulSoup, default_type: str = "follower"
             })
 
     return results
+
+
+def parse_advertisers(soup: BeautifulSoup) -> List[Dict[str, Any]]:
+    main = soup.find("main") or soup
+    results: Dict[str, bool] = {}
+
+    trs = main.find_all("tr")
+    if trs:
+        for tr in trs:
+            td = tr.find("td")
+            if not td:
+                continue
+            header_text = ""
+            for c in td.contents:
+                if isinstance(c, str):
+                    header_text += c
+                elif c.name not in ("div", "table"):
+                    header_text += c.get_text()
+            header_lower = header_text.strip().lower()
+            has_sharing = any(k in header_lower for k in ("interaction", "website", "store", "data sharing", "activity"))
+
+            for item_div in td.find_all("div", class_="_a6-p"):
+                if item_div.find("div", class_="_a6-p"):
+                    continue
+                name = item_div.get_text(strip=True)
+                if name:
+                    if name not in results or has_sharing:
+                        results[name] = has_sharing
+    else:
+        # Fallback for simpler list markup
+        for el in main.find_all(["li", "div"]):
+            txt = el.get_text(strip=True)
+            if txt and txt not in results and len(txt) < 200:
+                results[txt] = False
+
+    return [{"advertiser_name": k, "has_data_sharing": v} for k, v in results.items()]
+
+
+def parse_off_meta(soup: BeautifulSoup, default_company: Optional[str] = None) -> List[Dict[str, Any]]:
+    main = soup.find("main") or soup
+    results: List[Dict[str, Any]] = []
+
+    global_company = default_company
+    if not global_company:
+        h = main.find(["h2", "h1"]) or soup.find(["h1", "title"])
+        if h:
+            global_company = h.get_text(strip=True)
+
+    # Check if multiple h2 sections exist
+    h2_sections = main.find_all("div", recursive=False)
+    if not h2_sections:
+        h2_sections = [main]
+
+    for section in h2_sections:
+        sec_h2 = section.find("h2")
+        company = sec_h2.get_text(strip=True) if sec_h2 else global_company or "Unknown Company"
+
+        for table in section.find_all("table"):
+            ev_name = None
+            ts = None
+            for tr in table.find_all("tr"):
+                tds = tr.find_all("td", recursive=False)
+                if len(tds) >= 2:
+                    lbl = tds[0].get_text(strip=True).lower()
+                    val = tds[1].get_text(strip=True)
+                    if lbl == "event":
+                        ev_name = val
+                    elif lbl in ("received on", "timestamp", "time", "event time"):
+                        ts = normalize_timestamp(val)
+            if ev_name and ts:
+                results.append({
+                    "event_name": ev_name,
+                    "company_name": company,
+                    "timestamp": ts,
+                })
+
+    return results
+
+
+def parse_recent_searches(soup: BeautifulSoup) -> List[Dict[str, Any]]:
+    main = soup.find("main") or soup
+    results: List[Dict[str, Any]] = []
+
+    cards = main.find_all("div", recursive=False)
+    if not cards:
+        cards = [main]
+
+    for card in cards:
+        q = None
+        ts = None
+        for td in card.find_all("td"):
+            lbl = td.get_text(strip=True).lower()
+            nxt = td.find_next_sibling("td")
+            if not nxt:
+                continue
+            if "search query" in lbl or "query" in lbl:
+                q = nxt.get_text(strip=True)
+            elif "update time" in lbl or "search time" in lbl or "time" in lbl:
+                ts = normalize_timestamp(nxt.get_text(strip=True))
+
+        if not ts:
+            for d in card.find_all("div"):
+                norm = normalize_timestamp(d.get_text(strip=True))
+                if norm and norm != d.get_text(strip=True):
+                    ts = norm
+                    break
+
+        if q and ts:
+            results.append({
+                "search_query": q,
+                "searched_at": ts,
+            })
+
+    return results
+
+
+def parse_interactions(soup: BeautifulSoup, default_type: str = "like") -> List[Dict[str, Any]]:
+    main = soup.find("main") or soup
+    results: List[Dict[str, Any]] = []
+
+    cards = main.find_all("div", recursive=False)
+    if not cards:
+        cards = [main]
+
+    for card in cards:
+        link_tag = card.find("a", href=re.compile(r"instagram\.com/"))
+        url = link_tag.get("href") if link_tag else None
+
+        username = None
+        for td in card.find_all("td"):
+            if td.get_text(strip=True).lower() == "username":
+                nxt = td.find_next_sibling("td")
+                if nxt:
+                    username = nxt.get_text(strip=True)
+                    break
+
+        if not username and url:
+            match = re.search(r"instagram\.com/(?:stories/)?(?:_u/)?([^/?#]+)", url)
+            if match and match.group(1) not in ("reel", "p", "stories"):
+                username = match.group(1)
+
+        raw_ts = None
+        for d in card.find_all("div"):
+            txt = d.get_text(strip=True)
+            if re.match(r"^[A-Z][a-z]{2}\s+\d{1,2},\s+\d{4}\s+\d{1,2}:\d{2}\s+(?:am|pm)$", txt):
+                raw_ts = txt
+                break
+
+        norm_ts = normalize_timestamp(raw_ts)
+        if (url or username) and norm_ts:
+            results.append({
+                "interaction_type": default_type,
+                "target_url": url,
+                "target_username": username,
+                "timestamp": norm_ts,
+            })
+
+    return results
+
+
+def parse_deleted_content(soup: BeautifulSoup) -> List[Dict[str, Any]]:
+    main = soup.find("main") or soup
+    results: List[Dict[str, Any]] = []
+
+    cards = main.find_all("div", recursive=False)
+    if not cards:
+        cards = [main]
+
+    for card in cards:
+        publish_mode = None
+        caption = None
+        update_time = None
+
+        for td in card.find_all("td"):
+            lbl = td.get_text(strip=True).lower()
+            nxt = td.find_next_sibling("td")
+            if not nxt:
+                continue
+            val = nxt.get_text(strip=True)
+            if lbl == "publish mode":
+                publish_mode = val
+            elif lbl == "caption":
+                caption = val
+            elif lbl in ("update time", "deleted time", "deletion time"):
+                update_time = val
+
+        if not update_time:
+            for d in card.find_all("div"):
+                txt = d.get_text(strip=True)
+                if re.match(r"^[A-Z][a-z]{2}\s+\d{1,2},\s+\d{4}\s+\d{1,2}:\d{2}\s+(?:am|pm)$", txt):
+                    update_time = txt
+                    break
+
+        has_video = bool(card.find("video"))
+        has_img = bool(card.find("img"))
+
+        if publish_mode:
+            p_lower = publish_mode.lower()
+            if "reel" in p_lower:
+                content_type = "reel"
+            elif "snap" in p_lower or "story" in p_lower:
+                content_type = "story"
+            else:
+                content_type = publish_mode
+        elif has_video:
+            content_type = "video"
+        elif has_img:
+            content_type = "photo"
+        else:
+            content_type = "post"
+
+        norm_ts = normalize_timestamp(update_time)
+        if norm_ts:
+            results.append({
+                "content_type": content_type,
+                "caption": caption,
+                "deleted_at": norm_ts,
+            })
+
+    return results

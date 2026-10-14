@@ -37,6 +37,9 @@ htmlcov/
 *.sqlite
 *.sqlite3
 vault.db
+# Reports & local HTML outputs
+*.html
+!tests/fixtures/*.html
 reports/
 output/
 

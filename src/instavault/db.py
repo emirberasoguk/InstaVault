@@ -76,10 +76,65 @@ CREATE TABLE IF NOT EXISTS social_connections (
     UNIQUE(username, connection_type, connected_at) ON CONFLICT IGNORE
 );
 
+CREATE TABLE IF NOT EXISTS advertisers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    advertiser_name TEXT NOT NULL,
+    has_data_sharing BOOLEAN DEFAULT 0,
+    export_id INTEGER REFERENCES exports(id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(advertiser_name, export_id) ON CONFLICT IGNORE
+);
+
+CREATE TABLE IF NOT EXISTS off_meta_activity (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_name TEXT NOT NULL,
+    company_name TEXT NOT NULL,
+    timestamp TEXT NOT NULL,
+    export_id INTEGER REFERENCES exports(id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(company_name, timestamp) ON CONFLICT IGNORE
+);
+
+CREATE TABLE IF NOT EXISTS searches (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    search_query TEXT NOT NULL,
+    searched_at TEXT NOT NULL,
+    export_id INTEGER REFERENCES exports(id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(search_query, searched_at) ON CONFLICT IGNORE
+);
+
+CREATE TABLE IF NOT EXISTS interactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    interaction_type TEXT NOT NULL,
+    target_url TEXT,
+    target_username TEXT,
+    timestamp TEXT NOT NULL,
+    export_id INTEGER REFERENCES exports(id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(interaction_type, target_url, timestamp) ON CONFLICT IGNORE
+);
+
+CREATE TABLE IF NOT EXISTS deleted_content (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    content_type TEXT NOT NULL,
+    caption TEXT,
+    deleted_at TEXT NOT NULL,
+    export_id INTEGER REFERENCES exports(id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(content_type, deleted_at) ON CONFLICT IGNORE
+);
+
 CREATE INDEX IF NOT EXISTS idx_videos_owner ON videos_watched(owner_username);
 CREATE INDEX IF NOT EXISTS idx_videos_watched_at ON videos_watched(watched_at);
 CREATE INDEX IF NOT EXISTS idx_saved_owner ON saved_posts(owner_username);
 CREATE INDEX IF NOT EXISTS idx_social_user_type ON social_connections(username, connection_type);
+CREATE INDEX IF NOT EXISTS idx_advertisers_name ON advertisers(advertiser_name);
+CREATE INDEX IF NOT EXISTS idx_off_meta_company ON off_meta_activity(company_name);
+CREATE INDEX IF NOT EXISTS idx_searches_query ON searches(search_query);
+CREATE INDEX IF NOT EXISTS idx_interactions_username ON interactions(target_username);
+CREATE INDEX IF NOT EXISTS idx_interactions_type ON interactions(interaction_type);
+CREATE INDEX IF NOT EXISTS idx_deleted_content_type ON deleted_content(content_type);
 """
 
 
