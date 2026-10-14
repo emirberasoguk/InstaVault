@@ -29,6 +29,21 @@ def test_scan_and_ingest_deduplication(tmp_path):
     cur.execute("SELECT COUNT(*) FROM social_connections")
     assert cur.fetchone()[0] == 3
 
+    cur.execute("SELECT COUNT(*) FROM advertisers")
+    assert cur.fetchone()[0] == 3
+
+    cur.execute("SELECT COUNT(*) FROM off_meta_activity")
+    assert cur.fetchone()[0] == 2
+
+    cur.execute("SELECT COUNT(*) FROM searches")
+    assert cur.fetchone()[0] == 2
+
+    cur.execute("SELECT COUNT(*) FROM interactions")
+    assert cur.fetchone()[0] >= 2
+
+    cur.execute("SELECT COUNT(*) FROM deleted_content")
+    assert cur.fetchone()[0] == 2
+
     # Second ingest run with same fixtures -> must skip all due to SHA256 match
     summary2 = scan_and_ingest(conn, FIXTURES_DIR)
     assert summary2.new_files_ingested == 0
