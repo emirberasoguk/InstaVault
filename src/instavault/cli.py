@@ -77,13 +77,33 @@ def cmd_stats(args: argparse.Namespace) -> None:
     cur.execute("SELECT COUNT(DISTINCT username) FROM social_connections WHERE connection_type = 'following'")
     following_count = cur.fetchone()[0]
 
+    cur.execute("SELECT COUNT(*) FROM advertisers")
+    advertiser_count = cur.fetchone()[0]
+
+    cur.execute("SELECT COUNT(*) FROM off_meta_activity")
+    off_meta_count = cur.fetchone()[0]
+
+    cur.execute("SELECT COUNT(*) FROM searches")
+    search_count = cur.fetchone()[0]
+
+    cur.execute("SELECT COUNT(*) FROM interactions")
+    interaction_count = cur.fetchone()[0]
+
+    cur.execute("SELECT COUNT(*) FROM deleted_content")
+    deleted_count = cur.fetchone()[0]
+
     summary_panel = f"""[bold]Toplam Arşiv Dosyası:[/bold] {exp_count}
 [bold]Kapsanan Tarih Aralığı:[/bold] {min_date or 'N/A'} ➔ {max_date or 'N/A'}
 [bold]İzlenen Videolar:[/bold] {video_count:,}
 [bold]Görüntülenen Gönderiler:[/bold] {post_count:,}
 [bold]Kaydedilen Gönderiler:[/bold] {saved_count:,}
 [bold]Takipçi Havuzu:[/bold] {follower_count:,} tekil hesap
-[bold]Takip Edilen Havuzu:[/bold] {following_count:,} tekil hesap"""
+[bold]Takip Edilen Havuzu:[/bold] {following_count:,} tekil hesap
+[bold]Eşleşen Reklam Verenler:[/bold] {advertiser_count:,}
+[bold]Meta Dışı Etkinlikler:[/bold] {off_meta_count:,}
+[bold]Kaydedilen Aramalar:[/bold] {search_count:,}
+[bold]Etkileşimler (Likes):[/bold] {interaction_count:,}
+[bold]Silinen İçerikler:[/bold] {deleted_count:,}"""
 
     console.print(Panel(summary_panel, title="🏛️ InstaVault İstatistikleri", border_style="cyan"))
 
